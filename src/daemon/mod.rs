@@ -65,8 +65,7 @@ pub(crate) struct Globals {
 
 /// Columns at each end of a strip whose anti-aliasing differs from the same
 /// world pixels painted in another strip; the crop never shows them.
-/// (Becomes `paint::EDGE` on merge.)
-const EDGE: u32 = 8;
+use crate::paint::EDGE;
 
 /// Buffer width of a strip for an output `pw` pixels wide.
 fn strip_w(pw: u32) -> u32 {
