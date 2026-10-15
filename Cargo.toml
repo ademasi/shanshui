@@ -7,7 +7,14 @@ license = "MIT"
 
 [dependencies]
 pico-args = "0.5"
+rustix = { version = "1.1", features = ["fs", "mm", "event", "process", "thread", "rand", "pipe"] }
+signal-hook = { version = "0.3", default-features = false }
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
+# "log": send wayland-backend's own error prints to the (silent) log crate
+wayland-backend = { version = "0.3", features = ["log"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [profile.release]
 opt-level = 3
