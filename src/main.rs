@@ -16,7 +16,7 @@ USAGE:
 OPTIONS:
   --seed N      world seed (default: saved state, else random)
   --speed U     drift speed in world units per second (default 0.75, ~1 px/s at 1080p)
-  --palette P   night | night-tint | paper (default night)
+  --palette P   night-soft | night | night-tint | paper (default night-soft)
   --x X         world x of the left edge, in world units (render, default 0)
   --width W     pixels (render, default 1920)
   --height H    pixels (render, default 1080)
@@ -36,7 +36,7 @@ fn main() -> ExitCode {
 fn palette_arg(args: &mut pico_args::Arguments) -> Result<PaletteKind, String> {
     let p: Option<String> = args.opt_value_from_str("--palette").map_err(|e| e.to_string())?;
     match p {
-        None => Ok(PaletteKind::Night),
+        None => Ok(PaletteKind::NightSoft),
         Some(s) => PaletteKind::parse(&s).ok_or_else(|| format!("unknown palette '{s}'")),
     }
 }
