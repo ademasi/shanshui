@@ -742,7 +742,7 @@ mod tests {
         }
     }
 
-    /// Visual check: one column per tree type, written to the scratchpad.
+    /// Visual check: one column per tree type, written to the temp dir.
     #[test]
     #[ignore]
     fn preview_trees() {
@@ -766,7 +766,7 @@ mod tests {
         canv.extend(tree05(&mut cx, col * 4.5, g, Tree05Args { hei: 250.0, ..Default::default() }));
         canv.extend(tree06(&mut cx, col * 5.5, g, Tree06Args { hei: 110.0, ..Default::default() }));
         assert!(finite(&canv));
-        let path = "/tmp/claude-1000/-home-alex-git/01e62bf5-6418-42f5-9f02-d05c54456047/scratchpad/trees.png";
-        crate::paint::preview_png(&canv, 0.0, 2400, 700, path).unwrap();
+        let path = std::env::temp_dir().join("shanshui-trees.png");
+        crate::paint::preview_png(&canv, 0.0, 2400, 700, path.to_str().unwrap()).unwrap();
     }
 }

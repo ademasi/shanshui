@@ -748,9 +748,11 @@ mod tests {
             canv.extend(boat01(&mut cx, 740.0, y, 0.0, Boat01Args { sca: y / 800.0, fli: row == 1, ..Default::default() }));
             canv.extend(transmission_tower01(&mut cx, 950.0, y, 0.0, Default::default()));
         }
-        let out = "/tmp/claude-1000/-home-alex-git/01e62bf5-6418-42f5-9f02-d05c54456047/scratchpad/arch.png";
-        crate::paint::preview_png(&canv, 0.0, 1100, 700, out).unwrap();
+        let dir = std::env::temp_dir();
+        let out = dir.join("shanshui-arch.png");
+        crate::paint::preview_png(&canv, 0.0, 1100, 700, out.to_str().unwrap()).unwrap();
         // 4x zoom on the middle of the row (world x 280..830).
-        crate::paint::preview_png(&canv, 280.0, 2200, 2800, &out.replace(".png", "_zoom.png")).unwrap();
+        let zoom = dir.join("shanshui-arch_zoom.png");
+        crate::paint::preview_png(&canv, 280.0, 2200, 2800, zoom.to_str().unwrap()).unwrap();
     }
 }

@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 description = "Endless shan-shui ink landscape as a slowly drifting Wayland wallpaper"
 license = "MIT"
+authors = ["Alexandre De Masi"]
+repository = "https://github.com/ademasi/shanshui"
+readme = "README.md"
+keywords = ["wayland", "wallpaper", "sway", "generative", "shan-shui"]
+categories = ["graphics"]
 
 [dependencies]
 pico-args = "0.5"

@@ -1,9 +1,9 @@
 # shanshui
 
 An endless shan-shui (山水) ink landscape that drifts slowly behind your sway
-windows. Rust port of [LingDong-'s shan-shui-inf](https://github.com/LingDong-/shan-shui-inf)
-(MIT, original kept as `ref-shan-shui-inf.html`), on the original's cream
-paper by default (`--palette night-soft` etc. for Catppuccin Macchiato).
+windows. It is a Rust port of [shan-shui-inf](https://github.com/LingDong-/shan-shui-inf)
+by Lingdong Huang, painted on the original's cream paper by default
+(`--palette night-soft` and the others give Catppuccin Macchiato colours).
 
 ## How it stays cheap
 
@@ -61,3 +61,25 @@ shanshui render [--seed N] [--x X] [--width W] [--height H] [--palette P] -o out
 State (seed and drift position) lives in `~/.local/state/shanshui/state` and
 resumes after a restart; `--seed` starts a new world. `SHANSHUI_DEBUG=1`
 logs frame callbacks, steps and strip swaps.
+
+## Credits
+
+The landscape is Lingdong Huang's
+[shan-shui-inf](https://github.com/LingDong-/shan-shui-inf) (2018, MIT). This
+crate ports its algorithms to Rust: mountains, trees, buildings, figures,
+boats, brush strokes, the paper texture and the chunk planner. Its source is
+kept unchanged as `ref-shan-shui-inf.html` for reference.
+
+The rendering and the Wayland daemon are new to this port: the
+seamless strip painter, the deterministic per-chunk seeds, and the
+viewporter drift.
+
+`src/noise.rs` ports the Perlin `noise()` that shan-shui-inf embeds from
+[p5.js](https://github.com/processing/p5.js) (`src/math/noise.js`, LGPL-2.1),
+which adapted it from Processing, toxi and farbrausch.
+
+## License
+
+MIT, like the original. See [LICENSE](LICENSE), which keeps Lingdong Huang's
+copyright notice alongside this port's. The p5.js lineage of `src/noise.rs`
+is noted above.

@@ -1,5 +1,7 @@
-//! Perlin noise, ported from the original (itself from p5.js). The table is
-//! filled once from the world seed, so `noise()` is a pure function.
+//! Perlin noise, ported from the original, which embeds p5.js's `noise()`
+//! (src/math/noise.js, LGPL-2.1; adapted there from Processing, toxi and
+//! farbrausch). The table is filled once from the world seed, so `noise()` is
+//! a pure function.
 
 use crate::rng::Rng;
 
