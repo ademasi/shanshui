@@ -15,7 +15,7 @@ USAGE:
 
 OPTIONS:
   --seed N      world seed (default: saved state, else random)
-  --speed U     drift speed in world units per second (default 0.75, ~1 px/s at 1080p)
+  --speed U     drift speed in world units per second (default 3, ~4.6 px/s at 1080p)
   --fps F       sub-pixel crop updates per second while visible (default 30)
   --palette P   paper | night-soft | night | night-tint (default paper)
   --x X         world x of the left edge, in world units (render, default 0)
@@ -81,7 +81,7 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         None => {
-            let speed: f64 = args.opt_value_from_str("--speed").map_err(|e| e.to_string())?.unwrap_or(0.75);
+            let speed: f64 = args.opt_value_from_str("--speed").map_err(|e| e.to_string())?.unwrap_or(3.0);
             let fps: f64 = args.opt_value_from_str("--fps").map_err(|e| e.to_string())?.unwrap_or(30.0);
             reject_rest(args)?;
             daemon::run(daemon::Opts { seed, speed, fps, palette })
