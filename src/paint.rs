@@ -25,6 +25,8 @@ pub enum PixelFormat {
 pub enum PaletteKind {
     /// Catppuccin Macchiato base as paper, pale grey-blue ink
     Night,
+    /// as Night, but the densest ink stops at overlay1: calmer
+    NightSoft,
     /// as Night, with a lavender cast in the mid-tones
     NightTint,
     /// cream paper, dark ink, as the original
@@ -35,6 +37,7 @@ impl PaletteKind {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "night" => Some(Self::Night),
+            "night-soft" => Some(Self::NightSoft),
             "night-tint" => Some(Self::NightTint),
             "paper" => Some(Self::Paper),
             _ => None,
@@ -80,6 +83,16 @@ impl Palette {
             (0.72, subtext1),
             (1.0, text),
         ];
+        let surface0 = hex(0x363a4f);
+        let overlay0 = hex(0x6e738d);
+        let soft = [
+            (0.0, base),
+            (0.15, surface0),
+            (0.35, surface1),
+            (0.55, surface2),
+            (0.78, overlay0),
+            (1.0, overlay1),
+        ];
         let violet_grey = [0, 1, 2].map(|i| overlay2[i] * 0.6 + lavender[i] * 0.4);
         let tint = [
             (0.0, base),
@@ -92,6 +105,7 @@ impl Palette {
             let t = i as f32 / 255.0;
             let c = match kind {
                 PaletteKind::Night => ramp(&night, t),
+                PaletteKind::NightSoft => ramp(&soft, t),
                 PaletteKind::NightTint => ramp(&tint, t),
                 // multiply: paper * luminance
                 PaletteKind::Paper => hex(0xf5e9d0).map(|p| p * (1.0 - t)),
