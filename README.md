@@ -2,8 +2,8 @@
 
 An endless shan-shui (山水) ink landscape that drifts slowly behind your sway
 windows. Rust port of [LingDong-'s shan-shui-inf](https://github.com/LingDong-/shan-shui-inf)
-(MIT, original kept as `ref-shan-shui-inf.html`), painted in the Catppuccin
-Macchiato palette.
+(MIT, original kept as `ref-shan-shui-inf.html`), on the original's cream
+paper by default (`--palette night-soft` etc. for Catppuccin Macchiato).
 
 ## How it stays cheap
 
@@ -11,8 +11,12 @@ Macchiato palette.
   about 0.6 s at nice 19. Each output gets a new strip after about half an
   hour of visible drift at the default speed.
 - **Sway's GPU scrolls.** The strip goes to sway once as a `wl_shm` buffer and
-  is unmapped as soon as sway releases it. Each 1 px drift step only moves a
-  `wp_viewporter` crop: no repaint, no upload.
+  is unmapped as soon as sway releases it. Drift only moves a fractional
+  `wp_viewporter` crop (`--fps` updates per second, default 30, about 1/30 px
+  each), and sway's bilinear sampling makes the motion continuous: no repaint,
+  no upload, and about 0.3% of one core.
+- The paper's per-pixel speckle is softened, because sharp speckle would
+  visibly "breathe" at half-pixel crop positions.
 - **It stops when hidden.** It steps only on frame callbacks, which sway
   doesn't send to a fully covered background, and the drift clock pauses after 5 s.
 - About 5 MB resident at idle (about 1 MB of it private), peaking near 22 MB
@@ -40,7 +44,7 @@ exec_always ~/.local/bin/shanshui
 `exec_always` is safe across reloads, because a second instance sees the lock and exits.
 
 ```
-shanshui [--seed N] [--speed U] [--palette night-soft|night|night-tint|paper]
+shanshui [--seed N] [--speed U] [--fps F] [--palette paper|night-soft|night|night-tint]
 shanshui render [--seed N] [--x X] [--width W] [--height H] [--palette P] -o out.png
 ```
 

@@ -50,6 +50,47 @@ pub struct Palette {
     lut: [[u8; 3]; 256],
     /// paper grain amplitude, in LUT steps
     grain: f32,
+    /// Paper only: the original's paper texture, one quadrant of its
+    /// mirrored 512 px tile (`PAPER_Q` x `PAPER_Q` brightness values).
+    paper: Option<Box<[u8]>>,
+}
+
+const PAPER_TILE: i64 = 512;
+const PAPER_Q: usize = PAPER_TILE as usize / 2 + 1;
+
+/// The original's background canvas: `c = 245 + noise(i/10, j/10) * 10 -
+/// random * 20`, mirrored into a 512 px tile, tinted (c, .95c, .85c).
+fn paper_tile() -> Box<[u8]> {
+    let nz = crate::noise::Noise::new(0x7061_7065_72);
+    let mut rng = crate::rng::Rng::new(0x7061_7065_72);
+    let q = PAPER_Q;
+    let mut c = vec![0f32; q * q];
+    for i in 0..q {
+        for j in 0..q {
+            let v = 245.0 + nz.noise(i as f64 * 0.1, j as f64 * 0.1, 0.0) * 10.0 - rng.random() * 20.0;
+            c[i * q + j] = v as f32;
+        }
+    }
+    // Soften the per-pixel speckle with a [1 2 1] blur: the drift samples
+    // between pixels, and sharp speckle would visibly "breathe" (half its
+    // contrast at half-pixel offsets). The ink stays crisp.
+    let at = |c: &[f32], i: isize, j: isize| {
+        let f = |v: isize| v.clamp(0, q as isize - 1) as usize;
+        c[f(i) * q + f(j)]
+    };
+    let mut t = vec![0u8; q * q];
+    for i in 0..q as isize {
+        for j in 0..q as isize {
+            let mut sum = 0.0;
+            for (di, wi) in [(-1, 1.0), (0, 2.0), (1, 1.0)] {
+                for (dj, wj) in [(-1, 1.0), (0, 2.0), (1, 1.0)] {
+                    sum += wi * wj * at(&c, i + di, j + dj);
+                }
+            }
+            t[i as usize * q + j as usize] = (sum / 16.0).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    t.into_boxed_slice()
 }
 
 fn hex(c: u32) -> [f32; 3] {
@@ -116,7 +157,8 @@ impl Palette {
             PaletteKind::Paper => 12.0,
             _ => 5.0,
         };
-        Palette { lut, grain }
+        let paper = (kind == PaletteKind::Paper).then(paper_tile);
+        Palette { lut, grain, paper }
     }
 }
 
@@ -233,6 +275,22 @@ fn map_palette(buf: &mut [u8], x0_px: i64, w: u32, _h: u32, fmt: PixelFormat, pa
             // Opaque white background, so premultiplied == straight.
             let lum = (px[0] as u32 * 54 + px[1] as u32 * 183 + px[2] as u32 * 19) >> 8;
             let ink = 255 - lum.min(255) as i32;
+            if let Some(tile) = &pal.paper {
+                // Multiply onto the paper tile, keyed to the world pixel.
+                let fold = |v: i64| {
+                    let v = v.rem_euclid(PAPER_TILE);
+                    (if v <= PAPER_TILE / 2 { v } else { PAPER_TILE - v }) as usize
+                };
+                let c = tile[fold(x0_px + col as i64) * PAPER_Q + fold(row as i64)] as u32;
+                let l = lum.min(255);
+                let (r, g, b) = (c * l / 255, c * l * 95 / 25500, c * l * 85 / 25500);
+                let (r, g, b) = (r as u8, g as u8, b as u8);
+                match fmt {
+                    PixelFormat::Bgrx => px.copy_from_slice(&[b, g, r, 255]),
+                    PixelFormat::Rgba => px.copy_from_slice(&[r, g, b, 255]),
+                }
+                continue;
+            }
             // Grain keyed to the world pixel, so it is seamless across strips.
             let gx = (x0_px + col as i64) as u64;
             let g = mix(gx.wrapping_mul(0x1_0000_0001) ^ row as u64);

@@ -8,7 +8,7 @@ const HELP: &str = "\
 shanshui: an endless shan-shui ink landscape drifting behind your windows
 
 USAGE:
-  shanshui [--seed N] [--speed U] [--palette P]
+  shanshui [--seed N] [--speed U] [--fps F] [--palette P]
       Run as the wallpaper (wlr-layer-shell background, one surface per output).
   shanshui render [--seed N] [--x X] [--width W] [--height H] [--palette P] -o FILE.png
       Paint one stretch of landscape to a PNG.
@@ -16,7 +16,8 @@ USAGE:
 OPTIONS:
   --seed N      world seed (default: saved state, else random)
   --speed U     drift speed in world units per second (default 0.75, ~1 px/s at 1080p)
-  --palette P   night-soft | night | night-tint | paper (default night-soft)
+  --fps F       sub-pixel crop updates per second while visible (default 30)
+  --palette P   paper | night-soft | night | night-tint (default paper)
   --x X         world x of the left edge, in world units (render, default 0)
   --width W     pixels (render, default 1920)
   --height H    pixels (render, default 1080)
@@ -36,7 +37,7 @@ fn main() -> ExitCode {
 fn palette_arg(args: &mut pico_args::Arguments) -> Result<PaletteKind, String> {
     let p: Option<String> = args.opt_value_from_str("--palette").map_err(|e| e.to_string())?;
     match p {
-        None => Ok(PaletteKind::NightSoft),
+        None => Ok(PaletteKind::Paper),
         Some(s) => PaletteKind::parse(&s).ok_or_else(|| format!("unknown palette '{s}'")),
     }
 }
@@ -81,8 +82,9 @@ fn run() -> Result<(), String> {
         }
         None => {
             let speed: f64 = args.opt_value_from_str("--speed").map_err(|e| e.to_string())?.unwrap_or(0.75);
+            let fps: f64 = args.opt_value_from_str("--fps").map_err(|e| e.to_string())?.unwrap_or(30.0);
             reject_rest(args)?;
-            daemon::run(daemon::Opts { seed, speed, palette })
+            daemon::run(daemon::Opts { seed, speed, fps, palette })
         }
         Some(other) => Err(format!("unknown command '{other}' (try --help)")),
     }

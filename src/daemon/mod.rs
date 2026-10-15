@@ -34,6 +34,8 @@ pub struct Opts {
     pub seed: Option<u64>,
     /// world units per second
     pub speed: f64,
+    /// most crop updates per second while visible
+    pub fps: f64,
     pub palette: crate::paint::PaletteKind,
 }
 
@@ -104,7 +106,9 @@ pub(crate) struct Surf {
     /// when we asked for the frame callback that has not arrived yet
     frame_pending: Option<Instant>,
     cur: Option<Strip>,
-    src_x: i64,
+    /// fractional crop position last committed (NaN: none yet)
+    src_x: f64,
+    last_commit: Option<Instant>,
     ready: Option<Ready>,
     job: Option<u64>,
 }
@@ -182,6 +186,8 @@ pub(crate) struct State {
     painter: Painter,
     seed: u64,
     speed: f64,
+    /// minimum time between crop updates (1 / fps)
+    frame_iv: Duration,
     /// world offset of the panorama's left edge
     w: f64,
     last_advance: Instant,
@@ -194,6 +200,9 @@ pub(crate) struct State {
 
 pub fn run(opts: Opts) -> Result<(), String> {
     DEBUG.store(std::env::var_os("SHANSHUI_DEBUG").is_some_and(|v| v == "1"), Ordering::Relaxed);
+    if !(opts.fps.is_finite() && opts.fps >= 1.0) {
+        return Err("--fps must be at least 1".into());
+    }
     if !opts.speed.is_finite() {
         return Err("--speed must be a finite number".into());
     }
@@ -236,6 +245,7 @@ pub fn run(opts: Opts) -> Result<(), String> {
         painter: Painter::spawn(seed, opts.palette)?,
         seed,
         speed: opts.speed,
+        frame_iv: Duration::from_secs_f64(1.0 / opts.fps),
         w: w0,
         last_advance: Instant::now(),
         next_job: 1,
@@ -453,7 +463,8 @@ impl State {
                 needs_commit: false,
                 frame_pending: None,
                 cur: None,
-                src_x: i64::MIN,
+                src_x: f64::NAN,
+                last_commit: None,
                 ready: None,
                 job: None,
             });
@@ -502,52 +513,58 @@ impl State {
         if let Some(r) = s.ready.take() {
             s.wl.attach(Some(&r.buf), 0, 0);
             s.wl.damage_buffer(0, 0, r.strip.w as i32, r.strip.h as i32);
-            let prev = s.cur.map(|c| c.x0 + s.src_x);
+            let prev = s.cur.map(|c| c.x0 as f64 + s.src_x);
             s.cur = Some(r.strip);
-            s.src_x = i64::MIN;
+            s.src_x = f64::NAN;
             commit = true;
             swapped = Some((prev, r.strip.x0));
         }
         let st = s.cur?;
         let m = st.crop_w();
-        let v = left * st.scale;
-        let raw = v.floor() as i64 - st.x0;
-        let src = raw.clamp(EDGE as i64, EDGE as i64 + m);
-        if src != s.src_x || commit {
-            s.vp.set_source(src as f64, 0.0, m as f64, st.h as f64);
+        // Fractional crop, in wl_fixed steps (1/256 px): the compositor
+        // filters between pixels, so the drift is continuous.
+        let raw = left * st.scale - st.x0 as f64;
+        let src = (raw.clamp(EDGE as f64, (EDGE as i64 + m) as f64) * 256.0).round() / 256.0;
+        let since = s.last_commit.map_or(Duration::MAX, |t| now.saturating_duration_since(t));
+        if commit || (src != s.src_x && since >= self.frame_iv) {
+            s.vp.set_source(src, 0.0, m as f64, st.h as f64);
             s.vp.set_destination(s.logical.0, s.logical.1);
             match swapped {
                 Some((None, x0)) => {
                     debug(format_args!("{}: attached first strip x0={x0} src_x={src}", o.oname))
                 }
                 Some((Some(prev), x0)) => debug(format_args!(
-                    "{}: swapped to strip x0={x0} src_x={src}; left edge world px {prev} -> {}",
+                    "{}: swapped to strip x0={x0} src_x={src}; left edge world px {prev:.3} -> {:.3}",
                     o.oname,
-                    x0 + src
+                    x0 as f64 + src
                 )),
                 None => {}
             }
             if self.debug_steps > 0 && src != s.src_x && swapped.is_none() {
                 self.debug_steps -= 1;
-                debug(format_args!("{}: step src_x={src}", o.oname));
+                debug(format_args!("{}: step src_x={src:.4}", o.oname));
             }
             s.src_x = src;
+            s.last_commit = Some(now);
             s.wl.frame(&self.qh, name);
             s.frame_pending = Some(now);
             s.wl.commit();
             s.needs_commit = false;
             return None;
         }
-        // Waiting for the next pixel.
+        // Waiting for the next update slot, or for the crop to move at all.
         if speed == 0.0
-            || (speed > 0.0 && raw >= EDGE as i64 + m)
-            || (speed < 0.0 && raw <= EDGE as i64)
+            || (speed > 0.0 && raw >= (EDGE as i64 + m) as f64)
+            || (speed < 0.0 && raw <= EDGE as f64)
         {
             return None;
         }
-        let next_v = if speed > 0.0 { v.floor() + 1.0 } else { v.floor() };
-        let secs = ((next_v / st.scale - left) / speed).max(0.0) + 1e-4;
-        Some(Duration::from_secs_f64(secs.min(3600.0)))
+        let wait = if src != s.src_x {
+            self.frame_iv.saturating_sub(since)
+        } else {
+            Duration::from_secs_f64((1.0 / 256.0 / (speed.abs() * st.scale)).min(3600.0))
+        };
+        Some(wait.max(Duration::from_millis(1)))
     }
 
     fn strip_done(&mut self, d: Done) {
