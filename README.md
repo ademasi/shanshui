@@ -12,7 +12,7 @@ paper by default (`--palette night-soft` etc. for Catppuccin Macchiato).
   hour of visible drift at the default speed.
 - **Sway's GPU scrolls.** The strip goes to sway once as a `wl_shm` buffer and
   is unmapped as soon as sway releases it. Drift only moves a fractional
-  `wp_viewporter` crop (`--fps` updates per second, default 30, about 1/30 px
+  `wp_viewporter` crop (`--fps` updates per second, default 30, a fraction of a pixel
   each), and sway's bilinear sampling makes the motion continuous: no repaint,
   no upload, and about 0.3% of one core.
 - The paper's per-pixel speckle is softened, because sharp speckle would
