@@ -10,6 +10,9 @@ shanshui: an endless shan-shui ink landscape drifting behind your windows
 USAGE:
   shanshui [--seed N] [--speed U] [--fps F] [--palette P]
       Run as the wallpaper (wlr-layer-shell background, one surface per output).
+  shanshui pause | resume | toggle
+      Freeze or restart the drift of the running wallpaper (remembered across
+      restarts). Frozen, it uses no CPU; it also stops by itself when covered.
   shanshui render [--seed N] [--x X] [--width W] [--height H] [--palette P] -o FILE.png
       Paint one stretch of landscape to a PNG.
 
@@ -85,6 +88,10 @@ fn run() -> Result<(), String> {
             let fps: f64 = args.opt_value_from_str("--fps").map_err(|e| e.to_string())?.unwrap_or(30.0);
             reject_rest(args)?;
             daemon::run(daemon::Opts { seed, speed, fps, palette })
+        }
+        Some(cmd @ ("pause" | "resume" | "toggle")) => {
+            reject_rest(args)?;
+            daemon::control(cmd)
         }
         Some(other) => Err(format!("unknown command '{other}' (try --help)")),
     }

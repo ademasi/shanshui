@@ -46,6 +46,29 @@ const SAVE_EVERY: Duration = Duration::from_secs(60);
 
 static DEBUG: AtomicBool = AtomicBool::new(false);
 
+/// Flags set by signal handlers; the self-pipe wakes the event loop.
+#[derive(Default)]
+struct Signals {
+    quit: std::sync::Arc<AtomicBool>,
+    pause: std::sync::Arc<AtomicBool>,
+    resume: std::sync::Arc<AtomicBool>,
+}
+
+/// `shanshui pause|resume|toggle`: signal the running daemon.
+pub fn control(cmd: &str) -> Result<(), String> {
+    use rustix::process::{Signal, kill_process};
+    let pid = persist::running_pid()?;
+    let pause = match cmd {
+        "pause" => true,
+        "resume" => false,
+        _ => !persist::load().is_some_and(|s| s.frozen),
+    };
+    let sig = if pause { Signal::USR1 } else { Signal::USR2 };
+    kill_process(pid, sig).map_err(|e| format!("cannot signal pid {}: {e}", pid.as_raw_nonzero()))?;
+    println!("{}", if pause { "paused" } else { "drifting" });
+    Ok(())
+}
+
 pub(crate) fn debug(args: std::fmt::Arguments) {
     if DEBUG.load(Ordering::Relaxed) {
         let t = std::time::SystemTime::now()
@@ -196,6 +219,8 @@ pub(crate) struct State {
     debug_frames: u32,
     debug_steps: u32,
     paused: bool,
+    /// drift frozen by `shanshui pause` (SIGUSR1); `resume` is SIGUSR2
+    frozen: bool,
 }
 
 pub fn run(opts: Opts) -> Result<(), String> {
@@ -215,10 +240,11 @@ pub fn run(opts: Opts) -> Result<(), String> {
     };
 
     let saved = persist::load();
+    let frozen = saved.as_ref().is_some_and(|s| s.frozen);
     let (seed, w0) = match (opts.seed, saved) {
-        (Some(s), Some((ss, w))) if s == ss => (s, w),
+        (Some(s), Some(sv)) if s == sv.seed => (s, sv.w),
         (Some(s), _) => (s, 0.0),
-        (None, Some((ss, w))) => (ss, w),
+        (None, Some(sv)) => (sv.seed, sv.w),
         (None, None) => (persist::random_seed(), 0.0),
     };
     debug(format_args!("seed {seed}, W {w0:.2}, speed {}", opts.speed));
@@ -232,7 +258,16 @@ pub fn run(opts: Opts) -> Result<(), String> {
         rustix::pipe::PipeFlags::CLOEXEC | rustix::pipe::PipeFlags::NONBLOCK,
     )
     .map_err(|e| format!("pipe: {e}"))?;
-    for sig in [signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT, signal_hook::consts::SIGHUP] {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM, SIGUSR1, SIGUSR2};
+    let flags = Signals::default();
+    for (sig, flag) in [
+        (SIGTERM, &flags.quit),
+        (SIGINT, &flags.quit),
+        (SIGHUP, &flags.quit),
+        (SIGUSR1, &flags.pause),
+        (SIGUSR2, &flags.resume),
+    ] {
+        signal_hook::flag::register(sig, flag.clone()).map_err(|e| format!("signal: {e}"))?;
         let w = sig_w.try_clone().map_err(|e| format!("pipe: {e}"))?;
         signal_hook::low_level::pipe::register(sig, w).map_err(|e| format!("signal: {e}"))?;
     }
@@ -253,6 +288,7 @@ pub fn run(opts: Opts) -> Result<(), String> {
         debug_frames: 6,
         debug_steps: 6,
         paused: false,
+        frozen,
     };
     queue.roundtrip(&mut st).map_err(|e| format!("Wayland: {e}"))?;
     queue.roundtrip(&mut st).map_err(|e| format!("Wayland: {e}"))?;
@@ -267,8 +303,8 @@ pub fn run(opts: Opts) -> Result<(), String> {
         }
     }
 
-    let res = event_loop(&conn, &mut queue, &mut st, &sig_r);
-    if let Err(e) = persist::save(st.seed, st.w) {
+    let res = event_loop(&conn, &mut queue, &mut st, &sig_r, &flags);
+    if let Err(e) = persist::save(st.seed, st.w, st.frozen) {
         eprintln!("shanshui: cannot save state: {e}");
     }
     debug(format_args!("exit, saved seed {} W {:.2}", st.seed, st.w));
@@ -280,6 +316,7 @@ fn event_loop(
     queue: &mut wayland_client::EventQueue<State>,
     st: &mut State,
     sig: &OwnedFd,
+    flags: &Signals,
 ) -> Result<(), String> {
     let lost = |e: &dyn std::fmt::Display| format!("lost the Wayland connection: {e}");
     let mut last_save = Instant::now();
@@ -335,12 +372,25 @@ fn event_loop(
             }
         }
         if sig_ready {
-            debug(format_args!("signal, exiting"));
-            return Ok(());
+            let mut drain = [0u8; 64];
+            while rustix::io::read(sig, &mut drain).is_ok_and(|n| n > 0) {}
+            if flags.quit.load(Ordering::Relaxed) {
+                debug(format_args!("signal, exiting"));
+                return Ok(());
+            }
+            let pause = flags.pause.swap(false, Ordering::Relaxed);
+            let resume = flags.resume.swap(false, Ordering::Relaxed);
+            if pause || resume {
+                st.frozen = pause && !resume;
+                debug(format_args!("drift {}", if st.frozen { "frozen" } else { "resumed" }));
+                if let Err(e) = persist::save(st.seed, st.w, st.frozen) {
+                    eprintln!("shanshui: cannot save state: {e}");
+                }
+            }
         }
         if last_save.elapsed() >= SAVE_EVERY {
             if st.w != saved_w {
-                if let Err(e) = persist::save(st.seed, st.w) {
+                if let Err(e) = persist::save(st.seed, st.w, st.frozen) {
                     eprintln!("shanshui: cannot save state: {e}");
                 }
                 saved_w = st.w;
@@ -355,6 +405,10 @@ impl State {
     /// one whose last frame callback arrived, or was requested less than
     /// `HIDDEN_AFTER` ago.
     fn advance(&mut self, now: Instant) {
+        if self.frozen {
+            self.last_advance = now;
+            return;
+        }
         let mut until: Option<Instant> = None;
         for s in self.outputs.iter().filter_map(|o| o.surf.as_ref()).filter(|s| s.configured) {
             let t = match s.frame_pending {
@@ -526,7 +580,7 @@ impl State {
         let raw = left * st.scale - st.x0 as f64;
         let src = (raw.clamp(EDGE as f64, (EDGE as i64 + m) as f64) * 256.0).round() / 256.0;
         let since = s.last_commit.map_or(Duration::MAX, |t| now.saturating_duration_since(t));
-        if commit || (src != s.src_x && since >= self.frame_iv) {
+        if commit || (!self.frozen && src != s.src_x && since >= self.frame_iv) {
             s.vp.set_source(src, 0.0, m as f64, st.h as f64);
             s.vp.set_destination(s.logical.0, s.logical.1);
             match swapped {
@@ -553,7 +607,8 @@ impl State {
             return None;
         }
         // Waiting for the next update slot, or for the crop to move at all.
-        if speed == 0.0
+        if self.frozen
+            || speed == 0.0
             || (speed > 0.0 && raw >= (EDGE as i64 + m) as f64)
             || (speed < 0.0 && raw <= EDGE as f64)
         {

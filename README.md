@@ -43,6 +43,16 @@ exec_always ~/.local/bin/shanshui
 
 `exec_always` is safe across reloads, because a second instance sees the lock and exits.
 
+Freeze the drift (it then uses no CPU at all; this is remembered across
+restarts), for instance on a key:
+
+```
+bindsym $mod+Shift+p exec ~/.local/bin/shanshui toggle
+```
+
+`shanshui pause`, `shanshui resume` and `shanshui toggle` signal the running
+daemon (SIGUSR1/SIGUSR2; its pid is in `$XDG_RUNTIME_DIR/shanshui.lock`).
+
 ```
 shanshui [--seed N] [--speed U] [--fps F] [--palette paper|night-soft|night|night-tint]
 shanshui render [--seed N] [--x X] [--width W] [--height H] [--palette P] -o out.png
