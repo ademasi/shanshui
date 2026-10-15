@@ -34,7 +34,7 @@ sway config:
 
 ```
 swaybg_command -
-exec_always shanshui
+exec_always ~/.local/bin/shanshui
 ```
 
 `exec_always` is safe across reloads, because a second instance sees the lock and exits.
