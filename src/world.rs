@@ -389,31 +389,29 @@ mod tests {
     #[test]
     fn strips_are_seamless() {
         // A 600 px strip at P against the same columns of a 1400 px strip at
-        // P - 400. The painter's leftmost few columns are skipped: tiny-skia's
-        // anti-aliasing at the pixmap's left clip edge differs from the same
-        // pixels drawn mid-strip (a paint.rs matter, not a planning one).
-        // A handful of isolated pixels may differ by a step more than the
-        // tolerance where f32 rounding flips a miter join.
-        const EDGE: usize = 8;
+        // P - 400. Columns within EDGE of either side of the narrow strip are
+        // skipped: the painter's contract (`paint::EDGE` on main) is that they
+        // are approximate, since tiny-skia anti-aliases differently at the
+        // pixmap's clip edge. Tolerance 3: f32 rounding of pixel coordinates
+        // can flip a miter join here and there.
+        const EDGE: usize = 8; // == paint::EDGE once merged
         let world = World::new(3);
         let h = 360;
         let scale = scale_for_height(h);
         for &p in &[0i64, 1777, -2950, 40_000] {
             let a = strip(&world, p, scale, 600, h);
             let b = strip(&world, p - 400, scale, 1400, h);
-            let (mut worst, mut over) = (0, 0);
+            let mut worst = 0;
             for y in 0..h as usize {
-                for x in EDGE..600usize {
+                for x in EDGE..600 - EDGE {
                     for ch in 0..3 {
                         let va = a[(y * 600 + x) * 4 + ch] as i32;
                         let vb = b[(y * 1400 + x + 400) * 4 + ch] as i32;
-                        let d = (va - vb).abs();
-                        worst = worst.max(d);
-                        over += (d > 2) as usize;
+                        worst = worst.max((va - vb).abs());
                     }
                 }
             }
-            assert!(worst <= 4 && over <= 12, "strip at {p}: max diff {worst}, {over} values > 2");
+            assert!(worst <= 3, "strip at {p}: max channel difference {worst}");
         }
     }
 }
