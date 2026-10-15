@@ -1,0 +1,20 @@
+[package]
+name = "shanshui"
+version = "0.1.0"
+edition = "2024"
+description = "Endless shan-shui ink landscape as a slowly drifting Wayland wallpaper"
+license = "MIT"
+
+[dependencies]
+pico-args = "0.5"
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
