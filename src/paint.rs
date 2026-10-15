@@ -111,10 +111,15 @@ pub fn scale_for_height(height_px: u32) -> f64 {
     height_px as f64 / BAND_HEIGHT
 }
 
+/// Outer columns of a strip whose anti-aliasing differs slightly from the
+/// same world pixels painted inside a wider strip (tiny-skia clips paths at
+/// the pixmap edge). Only show `[EDGE, w - EDGE)` where strips must join.
+pub const EDGE: u32 = 8;
+
 /// Paint world pixels `[x0_px, x0_px + w)` (at `scale` px per world unit)
 /// into `out` (`w * h * 4` bytes). Pixel `(x, y)` of the strip shows world
 /// point `((x0_px + x) / scale, y / scale)`, so strips with the same scale
-/// line up exactly however they are cut.
+/// line up exactly however they are cut, except within `EDGE` of the sides.
 pub fn render_strip(
     world: &World,
     x0_px: i64,
@@ -184,7 +189,7 @@ fn draw_canv(pm: &mut PixmapMut, canv: &Canv, x0_px: i64, scale: f64, w: u32, h:
                 started = true;
             }
         }
-        let pad = s.width * scale + 2.0;
+        let pad = s.width * scale * 2.5 + 2.0; // miter joins reach 2x width
         if maxx < -pad || minx > w as f64 + pad || maxy < -pad || miny > h as f64 + pad {
             continue;
         }
@@ -253,4 +258,35 @@ pub fn preview_png(canv: &Canv, wx0: f64, w: u32, h: u32, path: &str) -> Result<
     let pm = tiny_skia::Pixmap::from_vec(buf, tiny_skia::IntSize::from_wh(w, h).ok_or("size")?)
         .ok_or("bad pixmap size")?;
     pm.save_png(path).map_err(|e| format!("{path}: {e}"))
+}
+
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    fn strip(world: &World, x0: i64, w: u32, h: u32) -> Vec<u8> {
+        let mut b = vec![0u8; w as usize * h as usize * 4];
+        let pal = Palette::new(PaletteKind::Night);
+        render_strip(world, x0, scale_for_height(h), w, h, &mut b, PixelFormat::Rgba, &pal);
+        b
+    }
+
+    #[test]
+    fn strips_join_inside_edge() {
+        let world = World::new(3);
+        let (w, h) = (200usize, 300u32);
+        for p in [1000i64, 1373, 2222, 4097] {
+            let narrow = strip(&world, p, w as u32, h);
+            let wide = strip(&world, p - 300, 800, h);
+            for y in 0..h as usize {
+                for x in EDGE as usize..w - EDGE as usize {
+                    for c in 0..3 {
+                        let a = narrow[(y * w + x) * 4 + c] as i32;
+                        let b = wide[(y * 800 + x + 300) * 4 + c] as i32;
+                        assert!((a - b).abs() <= 3, "p={p} x={x} y={y}: {a} vs {b}");
+                    }
+                }
+            }
+        }
+    }
 }
