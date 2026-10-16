@@ -56,6 +56,9 @@ const MOON_BLOCK: i64 = 12;
 /// behind everything.
 const BIRDS_DEPTH: f64 = 290.0;
 const MOON_DEPTH: f64 = -20000.0;
+/// Mist only on mountains standing farther back than this: nearer ones
+/// would put it in the bottom third of the screen.
+const MIST_MAX_Y: f64 = 420.0;
 
 /// What an element is, with the arguments `chunkloader` drew for it.
 #[derive(Clone, Debug, PartialEq)]
@@ -261,7 +264,9 @@ impl World {
                         let y = r.y + 2.0 + nat.random() * 8.0;
                         let thick = 30.0 + nat.random() * 30.0;
                         let kind = Kind::Mist { len: 2.0 * half, thick };
-                        out.push(Element { x, y, ..el(kind, r.y + 0.5, 2) });
+                        if r.y < MIST_MAX_Y {
+                            out.push(Element { x, y, ..el(kind, r.y + 0.5, 2) });
+                        }
                     }
                 }
                 Tag::FlatMount => {
