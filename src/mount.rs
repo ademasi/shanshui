@@ -389,7 +389,7 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
     // REEDS and now and then someone (not in the original) at its foot
     if a.veg {
         canv.extend(shore_reeds(cx, xoff, yoff, w * 0.45, (yoff / 700.0).clamp(0.5, 1.1)));
-        canv.extend(shore_figure(cx, xoff, yoff, w * 0.45, 0.1));
+        canv.extend(shore_figure(cx, xoff, yoff, w * 0.45, 0.15));
     }
 
     canv
