@@ -1,9 +1,12 @@
 //! Nature that is not in the original: mist banks, birds, the moon, reeds
-//! along the shore and waterfalls. Same conventions as the ported modules:
-//! world coordinates in, a `Canv` in paint order out, randomness from `cx`.
+//! along the shore, waterfalls, and people out in it (travellers, a scholar
+//! under a pine, anglers). Same conventions as the ported modules: world
+//! coordinates in, a `Canv` in paint order out, randomness from `cx`.
 
 use crate::brush::{BlobArgs, StrokeArgs, blob, stroke};
 use crate::geom::{Canv, PolyArgs, Pt, Rgba, haze, poly, rgba};
+use crate::man::{Hat, Item, ManArgs, man};
+use crate::mount::{RockArgs, rock};
 use crate::rng::Cx;
 use std::f64::consts::PI;
 
@@ -273,4 +276,166 @@ fn fall(cx: &mut Cx, x: f64, y0: f64, y1: f64, wid: f64, spray: bool) -> Canv {
         canv.push(haze([foot[0], foot[1] - 2.0], [wid * 3.5, wid * 1.3], mist_white(0.95)));
     }
     canv
+}
+
+/// Figure scale for something standing at depth `y` (nearer is larger).
+pub fn figure_sca(y: f64) -> f64 {
+    0.45 * (y / 700.0).clamp(0.5, 1.1)
+}
+
+/// `man` joint angles from absolute directions (radians, 0 = forward,
+/// pi/2 = down) of torso, head, thigh, shin, the arms and forearms.
+fn pose(torso: f64, head: f64, legs: [f64; 2], front: [f64; 2], back: [f64; 2]) -> [f64; 9] {
+    [
+        0.0,
+        torso,
+        head - torso,
+        legs[0],
+        legs[1] - legs[0],
+        front[0] - torso,
+        front[1] - front[0],
+        back[0] - torso,
+        back[1] - back[0],
+    ]
+}
+
+/// Where `man` puts the hand of the front arm, relative to the feet.
+fn front_hand(a: &[f64; 9], len: &[f64; 9], sca: f64) -> Pt {
+    let dir = |t: f64| [t.cos(), t.sin()];
+    let (t1, t3, t4) = (a[1], a[3], a[3] + a[4]);
+    let (t5, t6) = (a[1] + a[5], a[1] + a[5] + a[6]);
+    let shoulder = dir(t1).map(|v| v * len[1]);
+    let foot = [len[3] * dir(t3)[0] + len[4] * dir(t4)[0], len[3] * dir(t3)[1] + len[4] * dir(t4)[1]];
+    let hand = [
+        shoulder[0] + len[5] * dir(t5)[0] + len[6] * dir(t6)[0],
+        shoulder[1] + len[5] * dir(t5)[1] + len[6] * dir(t6)[1],
+    ];
+    [(hand[0] - foot[0]) * sca, (hand[1] - foot[1]) * sca]
+}
+
+/// A thin, slightly bowed line from `a` to `b`: a staff or a fishing rod.
+fn pole(cx: &mut Cx, a: Pt, b: Pt, bow: f64, col: Rgba, wid: f64) -> Canv {
+    let s = cx.random() * 10.0;
+    let pts: Vec<Pt> = (0..=10)
+        .map(|k| {
+            let t = k as f64 / 10.0;
+            let (nx, ny) = (-(b[1] - a[1]), b[0] - a[0]);
+            let off = bow * (PI * t).sin() + (cx.noise(t * 3.0, s, 0.0) - 0.5) * 0.6;
+            let l = (nx * nx + ny * ny).sqrt().max(1e-9);
+            [a[0] + (b[0] - a[0]) * t + nx / l * off, a[1] + (b[1] - a[1]) * t + ny / l * off]
+        })
+        .collect();
+    poly(&pts, PolyArgs { str: Some(col), wid, ..Default::default() })
+}
+
+const FIG_LEN: [f64; 9] = [0.0, 30.0, 20.0, 24.0, 22.0, 20.0, 18.0, 20.0, 16.0];
+
+/// A traveller walking with a staff, at `(x, y)` (feet), facing left if
+/// `fli`; now and then followed by a servant boy.
+pub fn traveller(cx: &mut Cx, x: f64, y: f64, sca: f64, fli: bool) -> Canv {
+    let dir = if fli { -1.0 } else { 1.0 };
+    let ang = pose(-PI / 2.0 + 0.08, -PI / 2.0 + 0.15, [PI / 2.0 - 0.3, PI / 2.0 + 0.1], [PI / 2.0 - 0.9, -0.25], [PI / 2.0 + 0.35, PI / 2.0 + 0.1]);
+    let hand = front_hand(&ang, &FIG_LEN, sca);
+    let hat = cx.rand_choice(&[Hat::Hat01, Hat::Hat02, Hat::None]);
+    let mut canv = Vec::new();
+    if cx.random() < 0.3 {
+        // the servant, smaller, a few steps behind with the luggage pole
+        let bx = x - dir * 28.0 * sca;
+        let bang = pose(-PI / 2.0, -PI / 2.0 + 0.1, [PI / 2.0 - 0.2, PI / 2.0], [PI / 2.0 - 0.6, -0.6], [PI / 2.0 + 0.3, PI / 2.0]);
+        canv.extend(man(cx, bx, y, ManArgs { sca: sca * 0.75, hat: Hat::None, ite: Item::Stick01, fli, ang: Some(bang), len: FIG_LEN }));
+    }
+    let top = [x + dir * hand[0], y + hand[1] - 9.0 * sca];
+    let foot = [x + dir * (hand[0] + 4.0 * sca), y];
+    canv.extend(pole(cx, top, foot, 0.8, grey(0.7), 1.3 * sca / 0.45));
+    canv.extend(man(cx, x, y, ManArgs { sca, hat, ite: Item::None, fli, ang: Some(ang), len: FIG_LEN }));
+    canv
+}
+
+/// A scholar sitting cross-legged at `(x, y)`, facing left if `fli`.
+pub fn sitter(cx: &mut Cx, x: f64, y: f64, sca: f64, fli: bool) -> Canv {
+    let ang = pose(-PI / 2.0 - 0.05, -PI / 2.0 + 0.2, [0.1, PI / 2.0 + 0.9], [PI / 2.0 - 0.4, 0.25], [PI / 2.0 + 0.2, 0.2]);
+    let len = [0.0, 30.0, 20.0, 20.0, 9.0, 18.0, 16.0, 18.0, 14.0];
+    let hat = cx.rand_choice(&[Hat::Hat01, Hat::None]);
+    man(cx, x, y, ManArgs { sca, hat, ite: Item::None, fli, ang: Some(ang), len })
+}
+
+/// An angler sitting on a rock at the water's edge at `(x, y)`, his rod and
+/// line out over the water on the left if `fli`.
+pub fn angler(cx: &mut Cx, x: f64, y: f64, sca: f64, fli: bool) -> Canv {
+    let dir = if fli { -1.0 } else { 1.0 };
+    let k = sca / 0.45;
+    let (rw, rh) = ((18.0 + cx.random() * 10.0) * k, (10.0 + cx.random() * 6.0) * k);
+    let seed = cx.random() * 100.0;
+    let mut canv = rock(cx, x, y, seed, RockArgs { wid: rw, hei: rh, tex: 20, sha: 2.0 });
+    let sy = y - rh * 0.75;
+    let ang = pose(-PI / 2.0 - 0.1, -PI / 2.0 + 0.3, [0.25, PI / 2.0 + 0.2], [PI / 2.0 - 0.7, -0.2], [PI / 2.0 + 0.3, 0.1]);
+    let len = [0.0, 30.0, 20.0, 20.0, 18.0, 18.0, 16.0, 18.0, 14.0];
+    let hand = front_hand(&ang, &len, sca);
+    let hx = x + dir * hand[0];
+    let hy = sy + hand[1];
+    let rl = (45.0 + cx.random() * 20.0) * k;
+    let tip = [hx + dir * rl * 0.85, hy - rl * 0.5];
+    canv.extend(man(cx, x, sy, ManArgs { sca, hat: Hat::Hat02, ite: Item::None, fli, ang: Some(ang), len }));
+    canv.extend(pole(cx, [hx - dir * 6.0 * k, hy + 3.0 * k], tip, -2.0 * k, grey(0.7), 1.1 * k));
+    canv.extend(pole(cx, tip, [tip[0] + dir * 3.0 * k, y + 6.0 * k], 0.5, grey(0.35), 0.6 * k));
+    canv
+}
+
+/// Rarely, someone out at the foot of a slope or on a shore spanning
+/// `x - half .. x + half` at height `y`: an angler (facing the water at the
+/// nearer end) or a traveller on the path.
+pub fn shore_figure(cx: &mut Cx, x: f64, y: f64, half: f64, p: f64) -> Canv {
+    if cx.random() >= p {
+        return Vec::new();
+    }
+    let side = if cx.random() < 0.5 { -1.0 } else { 1.0 };
+    let fx = x + side * half * (0.55 + cx.random() * 0.35);
+    let sca = figure_sca(y);
+    if cx.random() < 0.6 {
+        angler(cx, fx, y + 4.0, sca, side < 0.0)
+    } else {
+        let fli = cx.random() < 0.5;
+        traveller(cx, fx, y + 2.0, sca, fli)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::noise::Noise;
+
+    fn finite(c: &Canv) -> bool {
+        c.iter().all(|s| s.pts.iter().all(|p| p[0].is_finite() && p[1].is_finite()))
+    }
+
+    #[test]
+    fn figures_are_finite() {
+        let nz = Noise::new(2);
+        for seed in 0..20 {
+            let mut cx = Cx::new(&nz, seed);
+            for fli in [false, true] {
+                assert!(finite(&traveller(&mut cx, 100.0, 500.0, 0.45, fli)));
+                assert!(finite(&sitter(&mut cx, 100.0, 500.0, 0.45, fli)));
+                assert!(finite(&angler(&mut cx, 100.0, 500.0, 0.45, fli)));
+            }
+        }
+    }
+
+    /// Visual check: the figures large, both ways round, written to the temp dir.
+    #[test]
+    #[ignore]
+    fn preview_figures() {
+        let nz = Noise::new(5);
+        let mut cx = Cx::new(&nz, 3);
+        let mut canv = Vec::new();
+        for (row, fli) in [(0.0, false), (1.0, true)] {
+            let y = 300.0 + row * 300.0;
+            canv.extend(traveller(&mut cx, 120.0, y, 1.6, fli));
+            canv.extend(traveller(&mut cx, 330.0, y, 1.6, fli));
+            canv.extend(sitter(&mut cx, 560.0, y, 1.6, fli));
+            canv.extend(angler(&mut cx, 820.0, y, 1.6, fli));
+        }
+        let path = std::env::temp_dir().join("shanshui-figures.png");
+        crate::paint::preview_png(&canv, 0.0, 1100, 700, path.to_str().unwrap()).unwrap();
+    }
 }

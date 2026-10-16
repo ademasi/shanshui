@@ -10,7 +10,7 @@ use crate::arch::{
 };
 use crate::brush::{StrokeArgs, TextureArgs, stroke, texture};
 use crate::geom::{Canv, PolyArgs, Pt, Rgba, div, mid_pt, poly, rgb, rgba, triangulate};
-use crate::nature::{shore_reeds, waterfall};
+use crate::nature::{figure_sca, shore_figure, shore_reeds, sitter, traveller, waterfall};
 use crate::rng::Cx;
 use crate::tree::{
     Tree01Args, Tree02Args, Tree03Args, Tree04Args, Tree05Args, Tree06Args, Tree07Args,
@@ -386,9 +386,10 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
         |_, _| true,
     );
 
-    // REEDS (not in the original) along the shore at its foot
+    // REEDS and now and then someone (not in the original) at its foot
     if a.veg {
         canv.extend(shore_reeds(cx, xoff, yoff, w * 0.45, (yoff / 700.0).clamp(0.5, 1.1)));
+        canv.extend(shore_figure(cx, xoff, yoff, w * 0.45, 0.15));
     }
 
     canv
@@ -507,6 +508,7 @@ pub fn flat_mount(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: FlatMountArgs
     let reed_sca = (yoff / 700.0).clamp(0.5, 1.1);
     if grlist1.is_empty() {
         canv.extend(shore_reeds(cx, xoff, yoff, wid * 0.48, reed_sca));
+        canv.extend(shore_figure(cx, xoff, yoff, wid * 0.48, 0.3));
         return canv;
     }
     let wb = [grlist1[0][0], grlist2[0][0]];
@@ -553,8 +555,10 @@ pub fn flat_mount(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: FlatMountArgs
         StrokeArgs { wid: 3.0, col: grey(0.2), ..Default::default() },
     ));
     canv.extend(flat_dec(cx, xoff, yoff, bound(&grlist)));
-    // REEDS (not in the original) where the ground meets the water
+    // REEDS and maybe an angler (not in the original) where the ground
+    // meets the water
     canv.extend(shore_reeds(cx, xoff, yoff, wid * 0.48, reed_sca));
+    canv.extend(shore_figure(cx, xoff, yoff, wid * 0.48, 0.3));
     canv
 }
 
@@ -629,6 +633,12 @@ pub fn flat_dec(cx: &mut Cx, xoff: f64, yoff: f64, g: Bound) -> Canv {
             let xr = cx.norm_rand(g.xmin, g.xmax);
             let yr = mid;
             canv.extend(tree04(cx, xoff + xr, yoff + yr + 20.0, Tree04Args::default()));
+            // a SCHOLAR sitting under the pine (not in the original)
+            if cx.random() < 0.5 {
+                let side = if cx.random() < 0.5 { -1.0 } else { 1.0 };
+                let sx = xoff + xr + side * (12.0 + cx.random() * 14.0);
+                canv.extend(sitter(cx, sx, yoff + yr + 20.0, figure_sca(yoff), side < 0.0));
+            }
             let mut j = 0.0;
             while j < cx.random() * 2.0 {
                 let x = xoff + g.xmin.max(g.xmax.min(xr + cx.norm_rand(-50.0, 50.0)));
@@ -668,6 +678,13 @@ pub fn flat_dec(cx: &mut Cx, xoff: f64, yoff: f64, g: Bound) -> Canv {
         let y = yoff + cx.norm_rand(g.ymin, g.ymax);
         canv.extend(tree02(cx, x, y, Tree02Args::default()));
         i += 1.0;
+    }
+
+    // a TRAVELLER crossing the plateau (not in the original)
+    if cx.random() < 0.35 {
+        let x = xoff + cx.norm_rand(g.xmin, g.xmax) * 0.8;
+        let fli = cx.random() < 0.5;
+        canv.extend(traveller(cx, x, yoff + mid + 20.0, figure_sca(yoff), fli));
     }
 
     let ts = cx.rand_choice(&[0, 0, 0, 0, 0, 0, 0, 0, 1]);
