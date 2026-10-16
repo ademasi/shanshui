@@ -67,7 +67,7 @@ pub enum Kind {
     Boat { nseed: f64, fli: bool },
     /// a mist bank along `[x, x + len]`, painted just in front of its range
     Mist { len: f64, thick: f64 },
-    Birds { n: usize, vee: bool, fli: bool },
+    Birds { n: usize, vee: bool },
     Moon { r: f64 },
 }
 
@@ -294,8 +294,8 @@ impl World {
             let x = x0 + nat.random() * CWID;
             let y = 50.0 + nat.random() * 170.0;
             let n = 3 + (nat.random() * 9.0) as usize;
-            let (vee, fli) = (nat.random() < 0.5, nat.random() < 0.5);
-            out.push(el(Kind::Birds { n, vee, fli }, x, y, BIRDS_DEPTH, reg.len(), 0));
+            let vee = nat.random() < 0.5;
+            out.push(el(Kind::Birds { n, vee }, x, y, BIRDS_DEPTH, reg.len(), 0));
         }
         // One chunk in each block of MOON_BLOCK may hold the moon.
         let mut mr = Rng::new(hash(&[self.seed, c.div_euclid(MOON_BLOCK) as u64, TAG_MOON]));
@@ -352,7 +352,9 @@ impl World {
                 boat01(cx, e.x, e.y, nseed, Boat01Args { sca: e.y / 800.0, fli, ..Default::default() })
             }
             Kind::Mist { len, thick } => mist(cx, e.x, e.y, len, thick),
-            Kind::Birds { n, vee, fli } => birds(cx, e.x, e.y, BirdsArgs { n, vee, fli, sca: 1.3 }),
+            // Flying left: the drift slides the scenery left across the
+            // screen, so flocks facing right would seem to fly backwards.
+            Kind::Birds { n, vee } => birds(cx, e.x, e.y, BirdsArgs { n, vee, fli: true, sca: 1.3 }),
             Kind::Moon { r } => moon(cx, e.x, e.y, r),
         }
     }
