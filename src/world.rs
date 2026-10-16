@@ -11,11 +11,15 @@
 //! near, boats, then the per-element arguments `chunkloader` draws. The
 //! original's global `MEM.planmtx` coverage is recomputed from the mountain
 //! phase of the neighbouring chunks (a prefix of their stream).
+//!
+//! Mist, birds and the moon are not in the original. They are planned from
+//! streams of their own, so they leave the original's plan untouched.
 
 use crate::arch::{Boat01Args, boat01};
 use crate::brush::{StrokeArgs, stroke};
 use crate::geom::{Canv, Pt, rgba};
 use crate::mount::{DistMountArgs, FlatMountArgs, MountainArgs, dist_mount, flat_mount, mountain};
+use crate::nature::{BIRDS_REACH, BirdsArgs, MIST_REACH, MOON_HALO, birds, mist, moon};
 use crate::noise::Noise;
 use crate::rng::{Cx, Rng, hash};
 use std::cmp::Ordering;
@@ -34,8 +38,8 @@ const MWID: f64 = 200.0;
 /// Farthest an element's drawing reaches beyond its own chunk: flatMount is
 /// jittered up to 700 from its sample point and draws up to ~900 either side
 /// (half-width 500, ground wobble, plateau trees and buildings); distMount
-/// starts at its sample point and runs right up to 1500.
-const CHUNK_REACH: f64 = 1600.0;
+/// starts at its sample point and runs right up to 1500, its mist up to 1650.
+const CHUNK_REACH: f64 = 1700.0;
 /// Mountains are jittered up to this far from their sample point.
 const MOUNT_JITTER: f64 = 500.0;
 /// Chunks whose mountains can cover a given chunk: jitter + `MWID` < 2 chunks.
@@ -43,6 +47,15 @@ const COVER_CHUNKS: i64 = ((MOUNT_JITTER + MWID) / CWID) as i64 + 1;
 
 const TAG_PLAN: u64 = 0x504C_414E;
 const TAG_ELEM: u64 = 0x454C_454D;
+const TAG_NATURE: u64 = 0x4E41_5455;
+const TAG_MOON: u64 = 0x4D4F_4F4E;
+/// At most one moon per this many chunks (about half an hour of drift).
+const MOON_BLOCK: i64 = 12;
+/// Paint-order keys: birds fly in front of the distant ranges (y <= 280,
+/// their mist y + 0.5) and behind every mountain (y >= 300); the moon is
+/// behind everything.
+const BIRDS_DEPTH: f64 = 290.0;
+const MOON_DEPTH: f64 = -20000.0;
 
 /// What an element is, with the arguments `chunkloader` drew for it.
 #[derive(Clone, Debug, PartialEq)]
@@ -52,6 +65,10 @@ pub enum Kind {
     FlatMount { nseed: f64, wid: f64, cho: f64 },
     DistMount { nseed: f64, len: f64 },
     Boat { nseed: f64, fli: bool },
+    /// a mist bank along `[x, x + len]`, painted just in front of its range
+    Mist { len: f64, thick: f64 },
+    Birds { n: usize, vee: bool, fli: bool },
+    Moon { r: f64 },
 }
 
 /// One planned thing in the world (a mountain, a boat, ...).
@@ -83,6 +100,9 @@ impl Element {
             Kind::FlatMount { .. } => (x - 900.0, x + 900.0),
             Kind::DistMount { len, .. } => (x - 20.0, x + len + 20.0),
             Kind::Boat { .. } => (x - 200.0, x + 200.0),
+            Kind::Mist { len, .. } => (x - MIST_REACH, x + len + MIST_REACH),
+            Kind::Birds { .. } => (x - BIRDS_REACH, x + BIRDS_REACH),
+            Kind::Moon { r } => (x - r * MOON_HALO - 2.0, x + r * MOON_HALO + 2.0),
         }
     }
 
@@ -213,25 +233,36 @@ impl World {
             }
         }
 
-        // chunkloader: the arguments it draws, from the same stream.
+        // chunkloader: the arguments it draws, from the same stream. Mist,
+        // birds and the moon draw from `nat`.
+        let mut nat = Rng::new(hash(&[self.seed, c as u64, TAG_NATURE]));
         let mut out = Vec::with_capacity(reg.len() + 8);
+        let el = |kind, x: f64, y: f64, depth, index: usize, sub: u32| Element {
+            kind,
+            x,
+            y,
+            depth,
+            chunk: c,
+            index: index as u32,
+            sub,
+            seed: hash(&[self.seed, c as u64, index as u64, sub as u64, TAG_ELEM]),
+        };
         for (i, r) in reg.iter().enumerate() {
             let fi = i as f64;
-            let el = |kind, depth, sub: u32| Element {
-                kind,
-                x: r.x,
-                y: r.y,
-                depth,
-                chunk: c,
-                index: i as u32,
-                sub,
-                seed: hash(&[self.seed, c as u64, i as u64, sub as u64, TAG_ELEM]),
-            };
+            let el = |kind, depth, sub: u32| el(kind, r.x, r.y, depth, i, sub);
             match r.tag {
                 Tag::Mount => {
                     let nseed = fi * 2.0 * rng.random();
                     out.push(el(Kind::Mount { nseed }, r.y, 0));
                     out.push(el(Kind::Water, r.y - 10000.0, 1));
+                    if nat.random() < 0.6 {
+                        let half = 180.0 + nat.random() * 140.0;
+                        let x = r.x - half + (nat.random() - 0.5) * 80.0;
+                        let y = r.y + 2.0 + nat.random() * 8.0;
+                        let thick = 30.0 + nat.random() * 30.0;
+                        let kind = Kind::Mist { len: 2.0 * half, thick };
+                        out.push(Element { x, y, ..el(kind, r.y + 0.5, 2) });
+                    }
                 }
                 Tag::FlatMount => {
                     let nseed = 2.0 * rng.random() * PI;
@@ -243,6 +274,12 @@ impl World {
                     let nseed = rng.random() * 100.0;
                     let len = [500.0, 1000.0, 1500.0][(rng.random() * 3.0) as usize % 3];
                     out.push(el(Kind::DistMount { nseed, len }, r.y, 0));
+                    if nat.random() < 0.75 {
+                        // inset so the hazes stay within the range
+                        let thick = 18.0 + nat.random() * 12.0;
+                        let kind = Kind::Mist { len: len - 240.0, thick };
+                        out.push(Element { x: r.x + 120.0, y: r.y + 6.0, ..el(kind, r.y + 0.5, 1) });
+                    }
                 }
                 Tag::Boat => {
                     let nseed = rng.random();
@@ -250,6 +287,25 @@ impl World {
                     out.push(el(Kind::Boat { nseed, fli }, r.y, 0));
                 }
             }
+        }
+
+        let x0 = c as f64 * CWID;
+        if nat.random() < 0.25 {
+            let x = x0 + nat.random() * CWID;
+            let y = 50.0 + nat.random() * 170.0;
+            let n = 3 + (nat.random() * 9.0) as usize;
+            let (vee, fli) = (nat.random() < 0.5, nat.random() < 0.5);
+            out.push(el(Kind::Birds { n, vee, fli }, x, y, BIRDS_DEPTH, reg.len(), 0));
+        }
+        // One chunk in each block of MOON_BLOCK may hold the moon.
+        let mut mr = Rng::new(hash(&[self.seed, c.div_euclid(MOON_BLOCK) as u64, TAG_MOON]));
+        let has_moon = mr.random() < 0.75;
+        if has_moon && (mr.random() * MOON_BLOCK as f64) as i64 == c.rem_euclid(MOON_BLOCK) {
+            let x = x0 + mr.random() * CWID;
+            // high, where peaks rarely reach
+            let y = 45.0 + mr.random() * 50.0;
+            let r = 18.0 + mr.random() * 12.0;
+            out.push(el(Kind::Moon { r }, x, y, MOON_DEPTH, reg.len() + 1, 0));
         }
         out
     }
@@ -295,6 +351,9 @@ impl World {
             Kind::Boat { nseed, fli } => {
                 boat01(cx, e.x, e.y, nseed, Boat01Args { sca: e.y / 800.0, fli, ..Default::default() })
             }
+            Kind::Mist { len, thick } => mist(cx, e.x, e.y, len, thick),
+            Kind::Birds { n, vee, fli } => birds(cx, e.x, e.y, BirdsArgs { n, vee, fli, sca: 1.3 }),
+            Kind::Moon { r } => moon(cx, e.x, e.y, r),
         }
     }
 }
@@ -366,8 +425,7 @@ mod tests {
 
     #[test]
     fn extents_cover_drawing() {
-        // Drawn bounds must stay inside the planner's extents (trees and
-        // buildings are not counted while their modules are stubs).
+        // Drawn bounds must stay inside the planner's extents.
         let w = World::new(9);
         for e in w.plan(-20000.0, 20000.0) {
             let (l, r) = e.extent();

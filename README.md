@@ -72,7 +72,10 @@ kept unchanged as `ref-shan-shui-inf.html` for reference.
 
 The rendering and the Wayland daemon are new to this port: the
 seamless strip painter, the deterministic per-chunk seeds, and the
-viewporter drift.
+viewporter drift. So is some of the scenery (`src/nature.rs`): mist banks
+at the foot of the mountains and distant ranges, waterfalls, flocks of
+birds, the moon, reeds along the shore and small pines on the cliffs. The
+original's power-line towers are left out, and its buildings are rarer.
 
 `src/noise.rs` ports the Perlin `noise()` that shan-shui-inf embeds from
 [p5.js](https://github.com/processing/p5.js) (`src/math/noise.js`, LGPL-2.1),

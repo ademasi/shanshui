@@ -36,12 +36,14 @@ pub fn rgb(r: f64, g: f64, b: f64) -> Rgba {
 }
 
 /// One SVG `<polyline>`: filled (implicitly closed) and stroked (open).
+/// With `haze`, a soft ellipse instead (see [`haze`]).
 #[derive(Clone, Debug)]
 pub struct Shape {
     pub pts: Vec<Pt>,
     pub fill: Rgba,
     pub stroke: Rgba,
     pub width: f64,
+    pub haze: bool,
 }
 
 pub type Canv = Vec<Shape>;
@@ -68,7 +70,20 @@ pub fn poly(plist: &[Pt], a: PolyArgs) -> Canv {
         return Vec::new();
     }
     let pts = plist.iter().map(|p| [p[0] + a.xof, p[1] + a.yof]).collect();
-    vec![Shape { pts, fill: a.fil, stroke: a.str.unwrap_or(a.fil), width: a.wid }]
+    vec![Shape { pts, fill: a.fil, stroke: a.str.unwrap_or(a.fil), width: a.wid, haze: false }]
+}
+
+/// A soft ellipse (mist, spray, the moon's halo; not in the original):
+/// `col` at centre `c`, fading smoothly to transparent at radii `r`. Stored
+/// as its bounding box, `pts = [top-left, bottom-right]`.
+pub fn haze(c: Pt, r: Pt, col: Rgba) -> Shape {
+    Shape {
+        pts: vec![[c[0] - r[0], c[1] - r[1]], [c[0] + r[0], c[1] + r[1]]],
+        fill: col,
+        stroke: Rgba::NONE,
+        width: 0.0,
+        haze: true,
+    }
 }
 
 /// `PolyTools.midPt(...)`

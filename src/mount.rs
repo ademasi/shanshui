@@ -10,6 +10,7 @@ use crate::arch::{
 };
 use crate::brush::{StrokeArgs, TextureArgs, stroke, texture};
 use crate::geom::{Canv, PolyArgs, Pt, Rgba, div, mid_pt, poly, rgb, rgba, triangulate};
+use crate::nature::{shore_reeds, waterfall};
 use crate::rng::Cx;
 use crate::tree::{
     Tree01Args, Tree02Args, Tree03Args, Tree04Args, Tree05Args, Tree06Args, Tree07Args,
@@ -207,6 +208,19 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
         TextureArgs { xof: xoff, yof: yoff, tex: a.tex, sha, col: a.col, ..Default::default() },
     ));
 
+    // WATERFALL (not in the original): from a ledge on an inner ridge, well
+    // below the skyline, down to the foot.
+    if a.veg && h > 200.0 && cx.random() < 0.45 {
+        let k = cx.rand_choice(&[2usize, 3, 4]);
+        let i = 17 + (cx.random() * 16.0) as usize;
+        let top = pl[k][i];
+        let sky = skyline(&ptlist[0], top[0]);
+        if top[1] - sky > 0.12 * h && -top[1] > 0.3 * h {
+            let wid = 16.0 + cx.random() * 12.0;
+            canv.extend(waterfall(cx, top[0] + xoff, top[1] + yoff, yoff + 6.0, wid));
+        }
+    }
+
     // TOP
     vegetate(
         cx,
@@ -246,7 +260,7 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
             },
             |_, i, j| {
                 let ns = nz.noise(i as f64 * 0.2, j as f64 * 0.05, seed);
-                j % 2 == 1 && ns.powi(4) < 0.012 && pl[i][j][1].abs() / h < 0.3
+                j % 2 == 1 && ns.powi(4) < 0.02 && pl[i][j][1].abs() / h < 0.3
             },
             |veglist, i| {
                 let mut counter = 0;
@@ -286,9 +300,26 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
             },
             |_, i, j| {
                 let ns = nz.noise(i as f64 * 0.2, j as f64 * 0.05, seed);
-                (j == 0 || j == last) && ns.powi(4) < 0.012
+                (j == 0 || j == last) && ns.powi(4) < 0.02
             },
             |_, _| true,
+        );
+
+        // CLIFF PINES (not in the original): a couple of small gnarled pines
+        // on the upper slopes.
+        vegetate(
+            cx,
+            pl,
+            &mut canv,
+            |cx, x, y| {
+                let hei = 45.0 + cx.random() * 45.0;
+                tree04(cx, x + xoff, y + yoff, Tree04Args { hei, wid: 2.5, col: tree_col(x, y, 0.4), ..Default::default() })
+            },
+            |cx, i, j| {
+                let r = pl[i][j][1].abs() / h;
+                (1..5).contains(&i) && (0.35..0.8).contains(&r) && cx.random() < 0.012
+            },
+            |_, i| i < 2,
         );
     }
 
@@ -298,7 +329,7 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
         pl,
         &mut canv,
         |cx, x, y| {
-            let tt = cx.rand_choice(&[0, 0, 1, 1, 1, 2]);
+            let tt = cx.rand_choice(&[0, 0, 0, 0, 1, 1, 2]);
             if tt == 1 {
                 let wid = cx.norm_rand(40.0, 70.0);
                 let sto = cx.rand_choice(&[1.0, 2.0, 2.0, 3.0]);
@@ -320,7 +351,7 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
         },
         |_, i, j| {
             let ns = nz.noise(i as f64 * 0.2, j as f64 * 0.05, seed + 10.0);
-            i != 0 && (j == 1 || j == last - 1) && ns.powi(4) < 0.008
+            i != 0 && (j == 1 || j == last - 1) && ns.powi(4) < 0.004
         },
         |_, _| true,
     );
@@ -336,7 +367,7 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
             arch03(cx, x + xoff, y + yoff, seed, Arch03Args { sto, wid, ..Default::default() })
         },
         |cx, i, j| {
-            i == 1 && (j as f64 - pl[i].len() as f64 / 2.0).abs() < 1.0 && cx.random() < 0.02
+            i == 1 && (j as f64 - pl[i].len() as f64 / 2.0).abs() < 1.0 && cx.random() < 0.008
         },
         |_, _| true,
     );
@@ -355,7 +386,23 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
         |_, _| true,
     );
 
+    // REEDS (not in the original) along the shore at its foot
+    if a.veg {
+        canv.extend(shore_reeds(cx, xoff, yoff, w * 0.45, (yoff / 700.0).clamp(0.5, 1.1)));
+    }
+
     canv
+}
+
+/// Height of a mountain's outline `row` at `x` (rows run left to right).
+fn skyline(row: &[Pt], x: f64) -> f64 {
+    for w in row.windows(2) {
+        if w[0][0] <= x && x <= w[1][0] {
+            let t = (x - w[0][0]) / (w[1][0] - w[0][0]).max(1e-9);
+            return w[0][1] + t * (w[1][1] - w[0][1]);
+        }
+    }
+    0.0
 }
 
 pub struct FlatMountArgs {
@@ -457,7 +504,9 @@ pub fn flat_mount(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: FlatMountArgs
             grlist2.push(f[f.len() - 1]);
         }
     }
+    let reed_sca = (yoff / 700.0).clamp(0.5, 1.1);
     if grlist1.is_empty() {
+        canv.extend(shore_reeds(cx, xoff, yoff, wid * 0.48, reed_sca));
         return canv;
     }
     let wb = [grlist1[0][0], grlist2[0][0]];
@@ -504,6 +553,8 @@ pub fn flat_mount(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: FlatMountArgs
         StrokeArgs { wid: 3.0, col: grey(0.2), ..Default::default() },
     ));
     canv.extend(flat_dec(cx, xoff, yoff, bound(&grlist)));
+    // REEDS (not in the original) where the ground meets the water
+    canv.extend(shore_reeds(cx, xoff, yoff, wid * 0.48, reed_sca));
     canv
 }
 
@@ -619,7 +670,7 @@ pub fn flat_dec(cx: &mut Cx, xoff: f64, yoff: f64, g: Bound) -> Canv {
         i += 1.0;
     }
 
-    let ts = cx.rand_choice(&[0, 0, 0, 0, 1]);
+    let ts = cx.rand_choice(&[0, 0, 0, 0, 0, 0, 0, 0, 1]);
     if ts == 1 && tt != 4 {
         let x = xoff + cx.norm_rand(g.xmin, g.xmax);
         let s = cx.random();

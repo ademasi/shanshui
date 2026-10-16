@@ -7,6 +7,7 @@ pub mod daemon;
 pub mod geom;
 pub mod man;
 pub mod mount;
+pub mod nature;
 pub mod noise;
 pub mod paint;
 pub mod rng;
