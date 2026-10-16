@@ -6,8 +6,7 @@
 //! not an RNG seed: randomness comes from `cx`.
 
 use crate::arch::{
-    Arch01Args, Arch02Args, Arch03Args, Arch04Args, TransmissionTower01Args, arch01, arch02,
-    arch03, arch04, transmission_tower01,
+    Arch01Args, Arch02Args, Arch03Args, Arch04Args, arch01, arch02, arch03, arch04,
 };
 use crate::brush::{StrokeArgs, TextureArgs, stroke, texture};
 use crate::geom::{Canv, PolyArgs, Pt, Rgba, div, mid_pt, poly, rgb, rgba, triangulate};
@@ -338,27 +337,6 @@ pub fn mountain(cx: &mut Cx, xoff: f64, yoff: f64, seed: f64, a: MountainArgs) -
         },
         |cx, i, j| {
             i == 1 && (j as f64 - pl[i].len() as f64 / 2.0).abs() < 1.0 && cx.random() < 0.02
-        },
-        |_, _| true,
-    );
-
-    // TRANSM
-    vegetate(
-        cx,
-        pl,
-        &mut canv,
-        |cx, x, y| {
-            transmission_tower01(
-                cx,
-                x + xoff,
-                y + yoff,
-                seed,
-                TransmissionTower01Args::default(),
-            )
-        },
-        |_, i, j| {
-            let ns = nz.noise(i as f64 * 0.2, j as f64 * 0.05, seed + 20.0 * PI);
-            i % 2 == 0 && (j == 1 || j == last - 1) && ns.powi(4) < 0.002
         },
         |_, _| true,
     );
