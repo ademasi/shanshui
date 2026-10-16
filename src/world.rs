@@ -12,14 +12,15 @@
 //! original's global `MEM.planmtx` coverage is recomputed from the mountain
 //! phase of the neighbouring chunks (a prefix of their stream).
 //!
-//! Mist, birds and the moon are not in the original. They are planned from
-//! streams of their own, so they leave the original's plan untouched.
+//! Mist, birds, near shores and the moon are not in the original. They are
+//! planned from streams of their own, so they leave the original's plan
+//! untouched.
 
 use crate::arch::{Boat01Args, boat01};
 use crate::brush::{StrokeArgs, stroke};
 use crate::geom::{Canv, Pt, rgba};
 use crate::mount::{DistMountArgs, FlatMountArgs, MountainArgs, dist_mount, flat_mount, mountain};
-use crate::nature::{BIRDS_REACH, BirdsArgs, MIST_REACH, MOON_HALO, birds, mist, moon};
+use crate::nature::{BIRDS_REACH, BirdsArgs, MIST_REACH, MOON_HALO, SHORE_REACH, birds, mist, moon, near_shore};
 use crate::noise::Noise;
 use crate::rng::{Cx, Rng, hash};
 use std::cmp::Ordering;
@@ -69,6 +70,8 @@ pub enum Kind {
     Mist { len: f64, thick: f64 },
     Birds { n: usize, vee: bool },
     Moon { r: f64 },
+    /// low ground along the bottom edge, over `[x, x + len]`
+    Shore { len: f64, hei: f64, nseed: f64 },
 }
 
 /// One planned thing in the world (a mountain, a boat, ...).
@@ -103,6 +106,7 @@ impl Element {
             Kind::Mist { len, .. } => (x - MIST_REACH, x + len + MIST_REACH),
             Kind::Birds { .. } => (x - BIRDS_REACH, x + BIRDS_REACH),
             Kind::Moon { r } => (x - r * MOON_HALO - 2.0, x + r * MOON_HALO + 2.0),
+            Kind::Shore { len, .. } => (x - SHORE_REACH, x + len + SHORE_REACH),
         }
     }
 
@@ -297,6 +301,16 @@ impl World {
             let vee = nat.random() < 0.5;
             out.push(el(Kind::Birds { n, vee }, x, y, BIRDS_DEPTH, reg.len(), 0));
         }
+        // A near shore along the bottom edge every screen or two; painted in
+        // front of everything else (its depth is its water line, 715..745).
+        if nat.random() < 0.4 {
+            let x = x0 + nat.random() * CWID;
+            let len = 400.0 + nat.random() * 500.0;
+            let y = 715.0 + nat.random() * 30.0;
+            let hei = 70.0 + nat.random() * 50.0;
+            let nseed = nat.random() * 100.0;
+            out.push(el(Kind::Shore { len, hei, nseed }, x, y, y, reg.len() + 2, 0));
+        }
         // One chunk in each block of MOON_BLOCK may hold the moon.
         let mut mr = Rng::new(hash(&[self.seed, c.div_euclid(MOON_BLOCK) as u64, TAG_MOON]));
         let has_moon = mr.random() < 0.75;
@@ -356,6 +370,7 @@ impl World {
             // screen, so flocks facing right would seem to fly backwards.
             Kind::Birds { n, vee } => birds(cx, e.x, e.y, BirdsArgs { n, vee, fli: true, sca: 1.3 }),
             Kind::Moon { r } => moon(cx, e.x, e.y, r),
+            Kind::Shore { len, hei, nseed } => near_shore(cx, e.x, e.y, len, hei, nseed),
         }
     }
 }

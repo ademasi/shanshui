@@ -74,7 +74,9 @@ The rendering and the Wayland daemon are new to this port: the
 seamless strip painter, the deterministic per-chunk seeds, and the
 viewporter drift. So is some of the scenery (`src/nature.rs`): mist banks
 at the foot of the mountains and distant ranges, waterfalls, flocks of
-birds, the moon, reeds along the shore and small pines on the cliffs. The
+birds, the moon, reeds along the shore, small pines on the cliffs, near
+shores along the bottom edge, and people out in it (travellers, a scholar
+under the pines, anglers). The
 original's power-line towers are left out, and its buildings are rarer.
 
 `src/noise.rs` ports the Perlin `noise()` that shan-shui-inf embeds from

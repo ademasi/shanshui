@@ -1,13 +1,17 @@
 //! Nature that is not in the original: mist banks, birds, the moon, reeds
-//! along the shore, waterfalls, and people out in it (travellers, a scholar
-//! under a pine, anglers). Same conventions as the ported modules: world
+//! along the shore, waterfalls, near shores along the bottom edge, and
+//! people out in it (travellers, a scholar under a pine, anglers). Same conventions as the ported modules: world
 //! coordinates in, a `Canv` in paint order out, randomness from `cx`.
 
-use crate::brush::{BlobArgs, StrokeArgs, blob, stroke};
+use crate::brush::{BlobArgs, StrokeArgs, TextureArgs, blob, stroke, texture};
 use crate::geom::{Canv, PolyArgs, Pt, Rgba, haze, poly, rgba};
 use crate::man::{Hat, Item, ManArgs, man};
 use crate::mount::{RockArgs, rock};
 use crate::rng::Cx;
+use crate::tree::{
+    Tree02Args, Tree04Args, Tree05Args, Tree06Args, Tree07Args, Tree08Args, tree02, tree04, tree05,
+    tree06, tree07, tree08,
+};
 use std::f64::consts::PI;
 
 fn grey(a: f64) -> Rgba {
@@ -397,6 +401,134 @@ pub fn shore_figure(cx: &mut Cx, x: f64, y: f64, half: f64, p: f64) -> Canv {
         let fli = cx.random() < 0.5;
         traveller(cx, fx, y + 2.0, sca, fli)
     }
+}
+
+/// Farthest a near shore draws beyond its `[x, x + len]` (rods, reeds).
+pub const SHORE_REACH: f64 = 220.0;
+
+/// A near shore: low ground rising from below the bottom edge of the
+/// painting, with its water line at `y`, `len` long and up to about `hei`
+/// high, sloping into the water at both ends. On it: rocks, reeds at the
+/// water's edge, one kind of trees (big pines, a grove, bare trees or
+/// bushes), and now and then someone.
+pub fn near_shore(cx: &mut Cx, x: f64, y: f64, len: f64, hei: f64, seed: f64) -> Canv {
+    let (n, rows) = (50usize, 5usize);
+    let mut ptlist: Vec<Vec<Pt>> = Vec::with_capacity(rows);
+    for r in 0..rows {
+        let p = 1.0 - r as f64 / rows as f64 * 0.7;
+        let row = (0..n)
+            .map(|i| {
+                let u = (i as f64 / (n - 1) as f64 - 0.5) * p + 0.5;
+                let rise = (PI * u).sin().powf(0.6);
+                let ns = cx.noise(u * len * 0.008, seed, r as f64 * 0.3);
+                [x + u * len, y - hei * rise * (0.55 + 0.6 * ns) * p + r as f64 * 6.0]
+            })
+            .collect();
+        ptlist.push(row);
+    }
+    let top = ptlist[0].clone();
+    let top_at = |t: f64| {
+        let f = (t.clamp(0.0, 1.0) * (n - 1) as f64).min((n - 1) as f64 - 1e-9);
+        let (i, u) = (f as usize, f.fract());
+        top[i][1] * (1.0 - u) + top[i + 1][1] * u
+    };
+
+    // the ground, white over the water behind, outlined and textured
+    let mut ground = top.clone();
+    ground.push([x + len, y + 90.0]);
+    ground.push([x, y + 90.0]);
+    let mut canv = poly(&ground, PolyArgs { fil: Rgba::WHITE, str: Some(Rgba::NONE), ..Default::default() });
+    canv.extend(stroke(cx, &top, StrokeArgs { col: grey(0.3), noi: 1.0, wid: 3.0, ..Default::default() }));
+    let dis = |cx: &mut Cx| if cx.random() > 0.5 { 0.1 + 0.4 * cx.random() } else { 0.9 - 0.4 * cx.random() };
+    let tex = (len * 0.2) as usize;
+    canv.extend(texture(cx, &ptlist, TextureArgs { tex, wid: 2.0, dis: Some(&dis), ..Default::default() }));
+
+    // one kind of trees
+    let on = |t: f64| [x + t * len, top_at(t) + 4.0];
+    let kind = cx.rand_choice(&[0, 0, 0, 1, 1, 2, 2, 3]);
+    let mut pine = None;
+    match kind {
+        0 => {
+            for _ in 0..cx.rand_choice(&[1, 1, 2]) {
+                let t = 0.25 + cx.random() * 0.5;
+                let [px, py] = on(t);
+                let hei = 140.0 + cx.random() * 100.0;
+                canv.extend(tree04(cx, px, py, Tree04Args { hei, wid: 5.0, ..Default::default() }));
+                pine = Some((t, px, py));
+            }
+        }
+        1 => {
+            let t0 = 0.2 + cx.random() * 0.4;
+            for k in 0..2 + (cx.random() * 3.0) as usize {
+                let [px, py] = on(t0 + k as f64 * 30.0 / len);
+                let hei = 120.0 + cx.random() * 80.0;
+                let px = px + cx.norm_rand(-8.0, 8.0);
+                canv.extend(tree05(cx, px, py, Tree05Args { hei, ..Default::default() }));
+            }
+        }
+        2 => {
+            for _ in 0..1 + (cx.random() * 2.0) as usize {
+                let [px, py] = on(0.2 + cx.random() * 0.6);
+                let hei = 70.0 + cx.random() * 50.0;
+                if cx.random() < 0.5 {
+                    canv.extend(tree06(cx, px, py, Tree06Args { hei, ..Default::default() }));
+                } else {
+                    canv.extend(tree08(cx, px, py, Tree08Args { hei, ..Default::default() }));
+                }
+            }
+        }
+        _ => {
+            let (t0, t1) = (0.15 + cx.random() * 0.3, 0.55 + cx.random() * 0.3);
+            let mut t = t0;
+            while t < t1 {
+                let [px, py] = on(t);
+                let hei = cx.norm_rand(40.0, 80.0);
+                let py = py + cx.norm_rand(-1.0, 1.0);
+                canv.extend(tree07(cx, px, py, Tree07Args { hei, ..Default::default() }));
+                t += 20.0 / len;
+            }
+        }
+    }
+    for _ in 0..(len / 40.0 * cx.random()) as usize {
+        let [px, py] = on(0.1 + cx.random() * 0.8);
+        let py = py + cx.random() * 10.0;
+        canv.extend(tree02(cx, px, py, Tree02Args::default()));
+    }
+
+    // rocks, and reeds where the ground meets the water
+    for _ in 0..1 + (cx.random() * 3.0) as usize {
+        let [rx, ry] = on(0.1 + cx.random() * 0.8);
+        let (wid, hei) = (25.0 + cx.random() * 25.0, 18.0 + cx.random() * 17.0);
+        let s = cx.random() * 100.0;
+        canv.extend(rock(cx, rx, ry + 8.0, s, RockArgs { wid, hei, sha: 2.0, tex: 40 }));
+    }
+    for t in [0.06, 0.94] {
+        if cx.random() < 0.6 {
+            let [rx, ry] = on(t + (cx.random() - 0.5) * 0.06);
+            canv.extend(reeds(cx, rx, ry.max(y - 12.0), 1.1));
+        }
+    }
+
+    // maybe someone: a scholar under the pine (40% when there is one), an
+    // angler at the water (25%) or a traveller (20%)
+    let sca = figure_sca(y);
+    let who = cx.random();
+    if who < 0.4 {
+        if let Some((t, px, py)) = pine {
+            let side = if t < 0.5 { 1.0 } else { -1.0 };
+            let sx = px + side * (14.0 + cx.random() * 14.0);
+            canv.extend(sitter(cx, sx, py.max(top_at((sx - x) / len) + 4.0), sca, side < 0.0));
+        }
+    } else if who < 0.65 {
+        let left = cx.random() < 0.5;
+        let [ax, ay] = on(if left { 0.12 } else { 0.88 });
+        canv.extend(angler(cx, ax, ay, sca, left));
+    } else if who < 0.85 {
+        let [tx, ty] = on(0.3 + cx.random() * 0.4);
+        let fli = cx.random() < 0.5;
+        canv.extend(traveller(cx, tx, ty, sca, fli));
+    }
+    canv
 }
 
 #[cfg(test)]
